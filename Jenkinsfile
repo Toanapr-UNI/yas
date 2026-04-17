@@ -8,6 +8,8 @@ pipeline {
     }
 
     environment {
+        JAVA_HOME = '/opt/jdk25'
+        PATH = "${JAVA_HOME}/bin:${env.PATH}"
         // Populated from the root pom.xml during initialization to avoid drift
         ALL_SERVICES = ""
         // Required for Testcontainers in a Docker-in-Docker setup to route to the host gateway
