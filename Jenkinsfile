@@ -48,7 +48,7 @@ pipeline {
 
                     // Dynamically retrieve the Docker host gateway IP for Testcontainers routing
                     env.TESTCONTAINERS_HOST_OVERRIDE = sh(
-                        script: 'ip route | awk \'/default/ { print $3 }\'',
+                        script: 'ip route | awk \'/default/ { print $3; exit }\'',
                         returnStdout: true
                     ).trim()
 
@@ -141,6 +141,47 @@ EOF
 
                     echo "Changed services: ${env.CHANGED_SERVICES}"
                 }
+            }
+        }
+
+        // ============ DOCKER PREFLIGHT ============
+        stage('Verify Docker for Testcontainers') {
+            when {
+                expression { (env.CHANGED_SERVICES ?: 'none') != 'none' }
+            }
+            steps {
+                sh '''
+                    echo "Verifying Docker access for Testcontainers..."
+
+                    if ! command -v docker >/dev/null 2>&1; then
+                        echo "ERROR: docker CLI is not available on this Jenkins agent."
+                        echo "Install Docker on the agent or run this pipeline on an agent image that includes Docker."
+                        exit 1
+                    fi
+
+                    if ! docker info >/dev/null 2>&1; then
+                        echo "ERROR: Jenkins cannot access the Docker daemon."
+                        echo "Testcontainers requires Docker to start PostgreSQL and Keycloak containers."
+                        echo ""
+                        echo "Fix the Jenkins agent configuration:"
+                        echo "  - If Jenkins runs on a VM/bare-metal agent: add the Jenkins user to the docker group and restart the agent."
+                        echo "  - If Jenkins runs inside a container: mount /var/run/docker.sock and the docker CLI into the agent container."
+                        echo "  - If using Docker-in-Docker: expose a valid DOCKER_HOST and make sure the daemon is reachable."
+                        exit 1
+                    fi
+
+                    echo "Docker is reachable."
+
+                    if [ -n "${TESTCONTAINERS_HOST_OVERRIDE:-}" ]; then
+                        echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
+                    else
+                        echo "TESTCONTAINERS_HOST_OVERRIDE is empty; Testcontainers will auto-detect the host."
+                    fi
+
+                    echo "Checking required Testcontainers images..."
+                    docker image inspect postgres:16 >/dev/null 2>&1 || docker pull postgres:16
+                    docker image inspect quay.io/keycloak/keycloak:26.0 >/dev/null 2>&1 || docker pull quay.io/keycloak/keycloak:26.0
+                '''
             }
         }
 
